@@ -13,6 +13,11 @@ struct CallAudioPreferences {
     /// Physical USB parent of the store's module. This prevents two identical
     /// EC25/DJI sound cards from being cross-wired when both are attached.
     var preferredModuleParent: USBAudioParentKey?
+    /// USB serial number of the store's module. Its audio endpoints are the
+    /// devices whose UID carries this serial, which is how macOS identifies
+    /// firmware that reports a serial but exposes no numeric vendor/product
+    /// fields in the UID.
+    var preferredModuleSerial: String?
     /// Transient UAC forwarding readiness. The call command path sets this to
     /// true only after `AT+QPCMV=1,2` succeeds; nil/false must not build an
     /// all-zero bridge and present it as working.
@@ -24,6 +29,7 @@ struct CallAudioPreferences {
         moduleDeviceUID: String? = nil,
         ringtoneFileName: String? = nil,
         preferredModuleParent: USBAudioParentKey? = nil,
+        preferredModuleSerial: String? = nil,
         moduleVoiceReady: Bool? = nil
     ) {
         self.inputDeviceUID = inputDeviceUID
@@ -31,6 +37,7 @@ struct CallAudioPreferences {
         self.moduleDeviceUID = moduleDeviceUID
         self.ringtoneFileName = ringtoneFileName
         self.preferredModuleParent = preferredModuleParent
+        self.preferredModuleSerial = preferredModuleSerial
         self.moduleVoiceReady = moduleVoiceReady
     }
 }
@@ -150,7 +157,8 @@ final class CallAudioService {
         if let resolution = ModuleAudioTopology.resolve(
             devices: snapshot.all,
             overrideUID: prefs.moduleDeviceUID,
-            preferredParent: prefs.preferredModuleParent
+            preferredParent: prefs.preferredModuleParent,
+            preferredSerial: prefs.preferredModuleSerial
         ) {
             status.moduleDevice = resolution.group.captureDevice ?? resolution.group.playbackDevice
             // Direction comes solely from stream scopes, never from USB

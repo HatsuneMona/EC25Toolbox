@@ -101,11 +101,15 @@ enum ModuleTopologyEvidence: Equatable, Sendable {
 ///
 /// Rules, in order:
 /// 1. A saved override UID wins when that device exists.
-/// 2. USB devices are grouped by (vendor, product, location); the group whose
+/// 2. USB devices whose UID carries the module's own USB serial number belong
+///    to that module. macOS puts the serial into the UID of devices that
+///    report one, in place of numeric vendor/product IDs, so firmware with
+///    generic USB strings (e.g. "Android"/"AC Interface") is found this way.
+/// 3. USB devices are grouped by (vendor, product, location); the group whose
 ///    vendor is the known modem vendor (0x2c7c) wins over any other complete
 ///    group; within the group, direction comes solely from the devices'
 ///    input/output stream scopes.
-/// 3. Without any parseable USB identity, fall back to `ModuleAudioMatcher`
+/// 4. Without any parseable USB identity, fall back to `ModuleAudioMatcher`
 ///    name scoring per direction — never as a direction decider.
 enum ModuleAudioTopology {
     struct Resolution: Equatable, Sendable {
@@ -118,7 +122,8 @@ enum ModuleAudioTopology {
     static func resolve(
         devices: [AudioDeviceSummary],
         overrideUID: String?,
-        preferredParent: USBAudioParentKey? = nil
+        preferredParent: USBAudioParentKey? = nil,
+        preferredSerial: String? = nil
     ) -> Resolution? {
         if let overrideUID, !overrideUID.isEmpty,
            let overridden = devices.first(where: { $0.uid == overrideUID }),
@@ -131,6 +136,25 @@ enum ModuleAudioTopology {
                 playbackDevice: overridden.hasOutput ? overridden : nil
             )
             return Resolution(group: group, evidence: .override, groups: [group])
+        }
+
+        // The store's module serial (read over IOKit) names its audio endpoints
+        // directly; it outranks generic complete groups such as a USB headset.
+        if let preferredSerial, !preferredSerial.isEmpty {
+            var group = ModuleEndpointGroup(
+                identity: USBAudioIdentity(
+                    vid: preferredParent?.vid ?? 0,
+                    pid: preferredParent?.pid ?? 0,
+                    location: preferredParent?.location
+                )
+            )
+            for device in devices where device.isUSB && uid(device.uid, carriesSerial: preferredSerial) {
+                if device.hasInput { group.captureDevice = merge(group.captureDevice, device) }
+                if device.hasOutput { group.playbackDevice = merge(group.playbackDevice, device) }
+            }
+            if group.captureDevice != nil || group.playbackDevice != nil {
+                return Resolution(group: group, evidence: .usbParentIdentity, groups: [group])
+            }
         }
 
         var groups: [USBAudioParentKey: ModuleEndpointGroup] = [:]
@@ -178,6 +202,15 @@ enum ModuleAudioTopology {
             playbackDevice: playback
         )
         return Resolution(group: group, evidence: .nameScoreFallback, groups: [group])
+    }
+
+    /// Whether `uid` is an `AppleUSBAudioEngine:` UID with `serial` as one of
+    /// its colon-separated segments, i.e.
+    /// `AppleUSBAudioEngine:<manufacturer>:<product>:<serial>:<interface>`.
+    /// Whole segments only, so a serial never matches inside another field.
+    static func uid(_ uid: String, carriesSerial serial: String) -> Bool {
+        guard uid.hasPrefix("AppleUSBAudioEngine:") else { return false }
+        return uid.split(separator: ":").dropFirst().contains { $0 == serial }
     }
 
     /// When both sides resolve to the same group member set, keeps a stable

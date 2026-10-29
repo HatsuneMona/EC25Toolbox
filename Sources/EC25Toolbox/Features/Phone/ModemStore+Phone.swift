@@ -16,6 +16,7 @@ extension ModemStore {
                 moduleDeviceUID: self.settings.callAudioModuleDeviceUID,
                 ringtoneFileName: self.settings.ringtoneFileName,
                 preferredModuleParent: self.moduleDescriptor?.audioParentKey,
+                preferredModuleSerial: self.moduleDescriptor?.serialNumber,
                 // Runtime readiness is confirmed per call by
                 // `AT+QPCMV=1,2`; unknown must never become an all-zero link.
                 moduleVoiceReady: self.usesQDC507VoiceRuntime

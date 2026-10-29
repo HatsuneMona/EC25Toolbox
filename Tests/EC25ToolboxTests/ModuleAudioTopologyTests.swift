@@ -164,6 +164,122 @@ final class ModuleAudioTopologyTests: XCTestCase {
         XCTAssertNil(ModuleAudioTopology.resolve(devices: [macMic], overrideUID: nil))
     }
 
+    // MARK: - Serial-anchored endpoints
+
+    private let moduleSerial = "0123456789ABCDEF"
+
+    /// EC20F firmware: generic "Android" USB strings, one single-direction
+    /// device per streaming interface, and the USB serial instead of numeric
+    /// vendor/product IDs in the UID.
+    private func serialAnchoredPair() -> (capture: AudioDeviceSummary, playback: AudioDeviceSummary) {
+        (
+            makeDevice(
+                uid: "AppleUSBAudioEngine:Android:Android:0123456789ABCDEF:7",
+                name: "AC Interface", manufacturer: "Android", hasInput: true
+            ),
+            makeDevice(
+                uid: "AppleUSBAudioEngine:Android:Android:0123456789ABCDEF:8",
+                name: "AS Interface", manufacturer: "Android", hasOutput: true
+            )
+        )
+    }
+
+    func testSerialAnchoredEndpointsResolveWithoutNumericUIDFields() {
+        let pair = serialAnchoredPair()
+        // Without the module serial nothing identifies these devices.
+        XCTAssertNil(ModuleAudioTopology.resolve(
+            devices: [pair.capture, pair.playback], overrideUID: nil
+        ))
+
+        let resolution = ModuleAudioTopology.resolve(
+            devices: [pair.capture, pair.playback],
+            overrideUID: nil,
+            preferredSerial: moduleSerial
+        )
+        XCTAssertEqual(resolution?.evidence, .usbParentIdentity)
+        XCTAssertEqual(resolution?.group.captureDevice?.uid, pair.capture.uid)
+        XCTAssertEqual(resolution?.group.playbackDevice?.uid, pair.playback.uid)
+        XCTAssertEqual(resolution?.group.isComplete, true)
+    }
+
+    func testSerialAnchorKeepsPreferredParentVendor() {
+        let pair = serialAnchoredPair()
+        let parent = USBAudioParentKey(vid: 0x2c7c, pid: 0x0125, location: 0x0110_0000)
+        let resolution = ModuleAudioTopology.resolve(
+            devices: [pair.capture, pair.playback],
+            overrideUID: nil,
+            preferredParent: parent,
+            preferredSerial: moduleSerial
+        )
+        XCTAssertEqual(resolution?.group.identity.parentKey, parent)
+        XCTAssertEqual(resolution?.group.identity.isKnownModemVendor, true)
+    }
+
+    func testSerialAnchorBeatsCompleteNumericGroup() {
+        let pair = serialAnchoredPair()
+        let headsetCapture = makeDevice(
+            uid: "AppleUSBAudioEngine:ACME:Headset:4660:22136:5:1", hasInput: true
+        )
+        let headsetPlayback = makeDevice(
+            uid: "AppleUSBAudioEngine:ACME:Headset:4660:22136:5:2", hasOutput: true
+        )
+        let resolution = ModuleAudioTopology.resolve(
+            devices: [headsetCapture, headsetPlayback, pair.capture, pair.playback],
+            overrideUID: nil,
+            preferredSerial: moduleSerial
+        )
+        XCTAssertEqual(resolution?.group.captureDevice?.uid, pair.capture.uid)
+        XCTAssertEqual(resolution?.group.playbackDevice?.uid, pair.playback.uid)
+    }
+
+    func testSerialAnchorIgnoresOtherSerialsAndPartialSegments() {
+        let otherModule = makeDevice(
+            uid: "AppleUSBAudioEngine:Android:Android:FEDCBA9876543210:7", hasInput: true
+        )
+        let partial = makeDevice(
+            uid: "AppleUSBAudioEngine:Android:Android:0123456789ABCDEF0:8", hasOutput: true
+        )
+        XCTAssertNil(ModuleAudioTopology.resolve(
+            devices: [otherModule, partial],
+            overrideUID: nil,
+            preferredSerial: moduleSerial
+        ))
+    }
+
+    func testSerialAnchorRequiresUSBTransportAndUSBAudioUID() {
+        let bluetooth = makeDevice(
+            uid: "AppleUSBAudioEngine:Android:Android:0123456789ABCDEF:7",
+            usb: false, hasInput: true
+        )
+        let foreignUID = makeDevice(uid: "0123456789ABCDEF", hasOutput: true)
+        XCTAssertNil(ModuleAudioTopology.resolve(
+            devices: [bluetooth, foreignUID],
+            overrideUID: nil,
+            preferredSerial: moduleSerial
+        ))
+    }
+
+    func testSerialAnchorReportsAPartialGroupForMissingDirection() {
+        let pair = serialAnchoredPair()
+        let resolution = ModuleAudioTopology.resolve(
+            devices: [pair.playback],
+            overrideUID: nil,
+            preferredSerial: moduleSerial
+        )
+        XCTAssertNil(resolution?.group.captureDevice)
+        XCTAssertEqual(resolution?.group.playbackDevice?.uid, pair.playback.uid)
+        XCTAssertEqual(resolution?.group.isComplete, false)
+    }
+
+    func testEmptySerialFallsThroughToLegacyResolution() {
+        let pair = serialAnchoredPair()
+        XCTAssertNil(ModuleAudioTopology.resolve(
+            devices: [pair.capture, pair.playback],
+            overrideUID: nil,
+            preferredSerial: ""
+        ))
+    }
+
     func testEvidenceLocalizationKeys() {
         XCTAssertEqual(ModuleTopologyEvidence.override.localizationKey, "callaudio.topology.override")
         XCTAssertEqual(ModuleTopologyEvidence.usbParentIdentity.localizationKey, "callaudio.topology.usb_parent")
