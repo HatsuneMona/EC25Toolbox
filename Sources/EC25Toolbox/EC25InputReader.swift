@@ -170,22 +170,25 @@ final class EC25InputReader: @unchecked Sendable {
     }
 
     private static func read(from pipe: IOUSBHostPipe, timeout: TimeInterval) -> ChunkReadOutcome {
-        let buffer = NSMutableData(length: 512)!
-        var transferred = 0
-        do {
-            try pipe.__sendIORequest(
-                with: buffer,
-                bytesTransferred: &transferred,
-                completionTimeout: timeout
-            )
-        } catch let error as NSError where Int32(truncatingIfNeeded: error.code) == kIOReturnTimeout {
-            return .chunk(nil)
-        } catch {
-            let nsError = error as NSError
-            return .failed("\(nsError.localizedDescription) [\(nsError.domain) \(nsError.code)]")
-        }
+        // The dedicated thread needs a pool to release temporary Objective-C objects after each read.
+        return autoreleasepool {
+            let buffer = NSMutableData(length: 512)!
+            var transferred = 0
+            do {
+                try pipe.__sendIORequest(
+                    with: buffer,
+                    bytesTransferred: &transferred,
+                    completionTimeout: timeout
+                )
+            } catch let error as NSError where Int32(truncatingIfNeeded: error.code) == kIOReturnTimeout {
+                return .chunk(nil)
+            } catch {
+                let nsError = error as NSError
+                return .failed("\(nsError.localizedDescription) [\(nsError.domain) \(nsError.code)]")
+            }
 
-        guard transferred > 0 else { return .chunk(Data()) }
-        return .chunk(Data(bytes: buffer.bytes, count: transferred))
+            guard transferred > 0 else { return .chunk(Data()) }
+            return .chunk(Data(bytes: buffer.bytes, count: transferred))
+        }
     }
 }
