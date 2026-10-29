@@ -91,7 +91,14 @@ extension EnvironmentValues {
     /// `Form` section drop their own card so exactly one container — the
     /// section — draws the grouped background. Every other surface keeps the
     /// standalone card look.
-    @Entry var settingsGroupCardless = false
+    var settingsGroupCardless: Bool {
+        get { self[SettingsGroupCardlessKey.self] }
+        set { self[SettingsGroupCardlessKey.self] = newValue }
+    }
+}
+
+private struct SettingsGroupCardlessKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 /// macOS Settings-style group with a small category label and rounded row container.
@@ -744,12 +751,26 @@ struct EmptyState: View {
 extension EnvironmentValues {
     /// True on surfaces whose search belongs inline below the selected peer
     /// category. Both the popover and standalone window use this placement.
-    @Entry var prefersInlineSearch = true
+    var prefersInlineSearch: Bool {
+        get { self[PrefersInlineSearchKey.self] }
+        set { self[PrefersInlineSearchKey.self] = newValue }
+    }
 
     /// Surface hosting the view. Categorized pages adapt their navigation
     /// (rail vs. native picker) and popover height reporting from this value.
     /// Defaults to the menu-bar popover.
-    @Entry var presentationSurface: PresentationSurface = .popover
+    var presentationSurface: PresentationSurface {
+        get { self[PresentationSurfaceKey.self] }
+        set { self[PresentationSurfaceKey.self] = newValue }
+    }
+}
+
+private struct PrefersInlineSearchKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+private struct PresentationSurfaceKey: EnvironmentKey {
+    static let defaultValue: PresentationSurface = .popover
 }
 
 /// Unified detail-page margins (R15, `MACOS_SETTINGS_UI_SPEC` §4/§6): the

@@ -8,27 +8,16 @@ private struct ErrorAlertModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if #available(macOS 27, *) {
-                content.alert(
-                    localized("common.error"),
-                    item: $message
-                ) { _ in
-                    Button(localized("common.ok")) { message = nil }
-                } message: { text in
-                    Text(text)
-                }
-            } else {
-                content.alert(
-                    localized("common.error"),
-                    isPresented: Binding(
-                        get: { message != nil },
-                        set: { if !$0 { message = nil } }
-                    )
-                ) {
-                    Button(localized("common.ok")) { message = nil }
-                } message: {
-                    Text(message ?? "")
-                }
+            content.alert(
+                localized("common.error"),
+                isPresented: Binding(
+                    get: { message != nil },
+                    set: { if !$0 { message = nil } }
+                )
+            ) {
+                Button(localized("common.ok")) { message = nil }
+            } message: {
+                Text(message ?? "")
             }
         }
     }

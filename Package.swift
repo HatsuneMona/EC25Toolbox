@@ -6,7 +6,7 @@ let package = Package(
     name: "EC25Toolbox",
     defaultLocalization: "zh-Hans",
     platforms: [
-        .macOS(.v26)
+        .macOS("26.0")
     ],
     products: [
         .executable(name: "EC25Toolbox", targets: ["EC25Toolbox"]),
@@ -78,5 +78,6 @@ let package = Package(
             dependencies: ["EC25Toolbox", "EC25SystemHelperProtocol"],
             path: "Tests/EC25ToolboxTests"
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

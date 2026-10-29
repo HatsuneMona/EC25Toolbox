@@ -257,7 +257,7 @@ private struct CallAudioIconButton: View {
 
 /// Shared single-recording player so starting one row stops the previous.
 @MainActor
-final class RecordingPlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class RecordingPlayback: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
     @Published private(set) var playingID: String?
     /// Surfaces playback failures (unreadable/missing file) to the owning
     /// surface instead of silently stopping.
@@ -296,35 +296,6 @@ final class RecordingPlayback: NSObject, ObservableObject, AVAudioPlayerDelegate
 enum RecordingExportSupport {
     static var cafType: UTType {
         UTType(filenameExtension: "caf") ?? .audio
-    }
-}
-
-/// Export-only recording document (macOS 27+): the snapshot is just the
-/// source URL and the framework writer turns it into a `FileWrapper` off the
-/// main actor, so large recordings never block UI work during export.
-@available(macOS 27, *)
-@Observable
-final class RecordingExportDocument: WritableDocument {
-    static var writableContentTypes: [UTType] { [RecordingExportSupport.cafType] }
-
-    let sourceURL: URL
-    let suggestedName: String
-
-    init(sourceURL: URL, suggestedName: String) {
-        self.sourceURL = sourceURL
-        self.suggestedName = suggestedName
-    }
-
-    @MainActor
-    func snapshot(contentType: UTType) async throws -> sending URL {
-        sourceURL
-    }
-
-    func writer(configuration: sending WriteConfiguration) -> sending FileWrapperDocumentWriter<URL> {
-        FileWrapperDocumentWriter(configuration) { sourceURL, _ in
-            let data = try Data(contentsOf: sourceURL)
-            return FileWrapper(regularFileWithContents: data)
-        }
     }
 }
 
@@ -463,12 +434,8 @@ struct CallRecordingsContent: View {
         }
         let target = RecordingExportTarget(sourceURL: url, fileName: entry.fileName)
         exportTarget = target
-        if #available(macOS 27, *) {
-            isExporting = true
-        } else {
-            Task { @MainActor in
-                await exportLegacyPreRead(target)
-            }
+        Task { @MainActor in
+            await exportLegacyPreRead(target)
         }
     }
 
@@ -518,41 +485,14 @@ private struct RecordingExportPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if #available(macOS 27, *) {
-                content.modifier(RecordingExportPresenter27(
-                    target: $target,
-                    isPresented: $isPresented,
-                    onCompletion: onCompletion
-                ))
-            } else {
-                content.fileExporter(
-                    isPresented: $isPresented,
-                    document: legacyDocument,
-                    contentType: RecordingExportSupport.cafType,
-                    defaultFilename: legacyDocument?.suggestedName,
-                    onCompletion: onCompletion
-                )
-            }
+            content.fileExporter(
+                isPresented: $isPresented,
+                document: legacyDocument,
+                contentType: RecordingExportSupport.cafType,
+                defaultFilename: legacyDocument?.suggestedName,
+                onCompletion: onCompletion
+            )
         }
-    }
-}
-
-@available(macOS 27, *)
-private struct RecordingExportPresenter27: ViewModifier {
-    @Binding var target: RecordingExportTarget?
-    @Binding var isPresented: Bool
-    var onCompletion: (Result<URL, Error>) -> Void
-
-    func body(content: Content) -> some View {
-        content.fileExporter(
-            isPresented: $isPresented,
-            document: target.map {
-                RecordingExportDocument(sourceURL: $0.sourceURL, suggestedName: $0.fileName)
-            },
-            contentType: RecordingExportSupport.cafType,
-            defaultFilename: target?.fileName,
-            onCompletion: onCompletion
-        )
     }
 }
 
@@ -565,36 +505,21 @@ private struct RecordingDeleteConfirmation: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if #available(macOS 27, *) {
-                content.confirmationDialog(
-                    localized("recordings.delete.confirm"),
-                    item: $pendingDelete,
-                    titleVisibility: .visible
-                ) { entry in
-                    Button(localized("recordings.action.delete"), role: .destructive) {
-                        confirm(entry)
-                    }
-                    Button(localized("common.cancel"), role: .cancel) {}
-                } message: { _ in
-                    Text(localized("recordings.delete.message"))
+            content.confirmationDialog(
+                localized("recordings.delete.confirm"),
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingDelete
+            ) { entry in
+                Button(localized("recordings.action.delete"), role: .destructive) {
+                    confirm(entry)
                 }
-            } else {
-                content.confirmationDialog(
-                    localized("recordings.delete.confirm"),
-                    isPresented: Binding(
-                        get: { pendingDelete != nil },
-                        set: { if !$0 { pendingDelete = nil } }
-                    ),
-                    titleVisibility: .visible,
-                    presenting: pendingDelete
-                ) { entry in
-                    Button(localized("recordings.action.delete"), role: .destructive) {
-                        confirm(entry)
-                    }
-                    Button(localized("common.cancel"), role: .cancel) {}
-                } message: { _ in
-                    Text(localized("recordings.delete.message"))
-                }
+                Button(localized("common.cancel"), role: .cancel) {}
+            } message: { _ in
+                Text(localized("recordings.delete.message"))
             }
         }
     }
