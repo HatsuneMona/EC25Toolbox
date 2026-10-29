@@ -7,6 +7,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, SettingsCategoryItem 
     case general
     case calls
     case messages
+    case forwarding
     case cellular
     case module
     case network
@@ -33,6 +34,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, SettingsCategoryItem 
         case .general: "gearshape"
         case .calls: "phone"
         case .messages: "message.badge"
+        case .forwarding: "arrowshape.turn.up.right"
         case .cellular: "simcard"
         case .module: "cpu"
         case .network: "network"
@@ -109,6 +111,8 @@ struct SettingsView: View {
             callSettings
         case .messages:
             MessageManagementSettingsCard()
+        case .forwarding:
+            SMSForwardingSettingsView()
         case .cellular:
             cellularSettings
         case .module:

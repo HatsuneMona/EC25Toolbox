@@ -231,6 +231,8 @@ final class ModemSessionCoordinator: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        // Resume the durable outbox even while no modem is attached.
+        _ = SMSForwardingStore.shared
         if sharedSettings.effectiveManagementMode == .remote {
             fallbackStore.start()
         }

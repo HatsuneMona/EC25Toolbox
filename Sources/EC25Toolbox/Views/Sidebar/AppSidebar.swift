@@ -70,12 +70,13 @@ enum SidebarSearchIndex {
         subPages(
             keyFormat: { "settings.category.\($0)" },
             tab: .settings,
-            rawValues: ["general", "calls", "messages", "cellular", "module", "network", "remote", "datetime", "maintenance"],
-            systemImages: ["gearshape", "phone", "message.badge", "simcard", "cpu", "network", "network.badge.shield.half.filled", "clock", "wrench.and.screwdriver"],
+            rawValues: ["general", "calls", "messages", "forwarding", "cellular", "module", "network", "remote", "datetime", "maintenance"],
+            systemImages: ["gearshape", "phone", "message.badge", "arrowshape.turn.up.right", "simcard", "cpu", "network", "network.badge.shield.half.filled", "clock", "wrench.and.screwdriver"],
             keywordKeys: [
                 // The notification toggles and call-audio settings live inside
                 // these pages; the spec requires search to locate them.
                 "messages": ["settings.search.keyword.notifications"],
+                "forwarding": ["forwarding.search.keywords"],
                 "calls": ["settings.search.keyword.audio"],
                 "network": ["settings.search.keyword.apn"],
             ]

@@ -588,6 +588,18 @@ final class SMSArchiveStore {
         document.logical.filter { $0.scopeID == scopeID && $0.deletedAt == nil }
     }
 
+    /// Read-only forwarding projection, restricted to this modem response.
+    func forwardingSnapshot(
+        liveSegments: [SMSSegment], scope: SIMMessageScope,
+        moduleID: String, moduleName: String
+    ) -> SMSForwardingArchiveSnapshot {
+        SMSForwardingArchiveSnapshot.make(
+            records: displayableLogicalRecords(in: scope.id),
+            segments: document.segments, liveSegments: liveSegments,
+            scope: scope, moduleID: moduleID, moduleName: moduleName
+        )
+    }
+
     func messages(in scopeID: String) -> [SMSMessage] {
         displayableLogicalRecords(in: scopeID)
             .map(\.message)

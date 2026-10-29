@@ -116,6 +116,15 @@ extension ModemStore {
             return
         }
 
+        // eSIM profile changes can leave the overview ICCID cache stale.
+        // Bind this listing to a live identity before generating forwarding work.
+        let verifyForwardingSIM = SMSForwardingStore.shared.configuration.enabled
+        var forwardingICCID: String?
+        if verifyForwardingSIM {
+            let identity = normalizedSIMICCID(try await sendUnlogged("AT+QCCID", timeout: 5_000))
+            guard !identity.isEmpty else { throw SIMPINError.simIdentityUnavailable }
+            forwardingICCID = identity
+        }
         let modemStorages = ["ME", "SM"]
         var all: [SMSSegment] = []
         var presentStorages: Set<String> = []
@@ -156,6 +165,11 @@ extension ModemStore {
             }
         }
 
+        if let forwardingICCID {
+            let identity = normalizedSIMICCID(try await sendUnlogged("AT+QCCID", timeout: 5_000))
+            guard identity == forwardingICCID else { throw SIMPINError.simIdentityUnavailable }
+            state.info.iccid = identity
+        }
         let previous = state.messages
         let scope = currentSIMMessageScope()
         guard scope.isIdentified else {
@@ -176,6 +190,25 @@ extension ModemStore {
         }
         state.smsBackup = smsArchive.state
         state.unreadCount = state.messages.filter(\.unread).count
+        // Queue only after the archive write succeeded, before modem cleanup,
+        // independently of notification/read-state/UI visibility policies.
+        let forwardingModuleID = moduleSerialNumber ?? moduleIdentifier
+        let forwarding = smsArchive.forwardingSnapshot(
+            liveSegments: all, scope: scope,
+            moduleID: forwardingModuleID, moduleName: moduleDisplayName
+        )
+        if verifyForwardingSIM {
+            SMSForwardingStore.shared.ingest(
+                messages: forwarding.messages,
+                observedComponentIDs: forwarding.observedComponentIDs,
+                moduleID: forwardingModuleID,
+                simID: scope.iccid ?? "",
+                isCompleteSnapshot: presentStorages.isSuperset(of: modemStorages)
+            )
+        }
+        guard SMSForwardingStore.shared.allowsModemCleanup else {
+            throw SMSForwardingError.persistence
+        }
         notifyNewIncomingMessages(previous: previous, scope: scope)
     }
 

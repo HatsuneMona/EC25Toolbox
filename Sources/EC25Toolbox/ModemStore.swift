@@ -268,6 +268,7 @@ final class ModemStore: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        // Load the durable queue even before the first modem refresh returns.
         if ownsGlobalServices {
             applyLoginItemSetting()
             startRemoteSharingIfNeeded()
