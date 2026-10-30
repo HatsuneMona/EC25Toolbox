@@ -368,4 +368,64 @@ final class SMSForwardingCoreTests: XCTestCase {
         XCTAssertNotNil(f.store.lastError)
         XCTAssertFalse(f.store.allowsModemCleanup)
     }
+
+    func testIncomingCallGoesOnlyToWebhookWithTimeSensitiveLevelAndNoDuplicates() async throws {
+        let transport = ForwardingRecordingTransport()
+        let f = ForwardingFixture(transport: transport); defer { f.cleanup() }
+        f.channel.bodyTemplate = #"{"title":"${from}","body":"${content}","level":"${level}"}"#
+        try f.configure()
+        let chat = SMSForwardingChannel(name: "bot", kind: .feishu)
+        try f.store.saveChannel(chat, secrets: .init(endpoint: "https://example.invalid/hook"))
+        try f.store.saveRule(SMSForwardingRule(name: "to bot", channelIDs: [chat.id]))
+        f.store.ingestIncomingCall(caller: "+8613800138000", epoch: 3, moduleID: "modem", moduleName: "模块", simID: "sim", simName: "SIM")
+        f.store.ingestIncomingCall(caller: "+8613800138000", epoch: 3, moduleID: "modem", moduleName: "模块", simID: "sim", simName: "SIM")
+        XCTAssertEqual(f.store.jobs.count, 1)
+        XCTAssertEqual(f.store.jobs[0].channelID, f.channel.id)
+        let processed = await f.store.processNextReady()
+        XCTAssertTrue(processed)
+        let sent = await transport.captured()
+        XCTAssertEqual(sent.count, 1)
+        let payload = try json(sent[0])
+        XCTAssertEqual(payload["level"] as? String, "timeSensitive")
+        XCTAssertEqual(payload["title"] as? String, "+8613800138000")
+        XCTAssertEqual(payload["body"] as? String, "来电")
+    }
+
+    func testSMSUsesActiveLevelPlaceholder() {
+        let f = ForwardingFixture()
+        XCTAssertEqual(SMSForwardingSender.render("${level}/${event}", message: f.message()), "active/sms")
+    }
+
+    func testStaleCallAlertIsNotSentLate() async throws {
+        let transport = ForwardingRecordingTransport()
+        let f = ForwardingFixture(transport: transport); defer { f.cleanup() }
+        try f.configure()
+        f.store.ingestIncomingCall(caller: "10086", epoch: 1, moduleID: "modem", moduleName: "模块", simID: "sim", simName: "SIM")
+        f.date = f.date.addingTimeInterval(120)
+        let processed = await f.store.processNextReady()
+        let sent = await transport.captured()
+        XCTAssertTrue(processed)
+        XCTAssertEqual(sent.count, 0)
+        XCTAssertEqual(f.store.jobs[0].status, .expired)
+    }
+
+    func testFileSecretsRoundTripUserOnlyPermissionsAndKeychainMigration() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("EC25-secrets-test-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let legacy = ForwardingMemorySecrets()
+        let old = UUID(), fresh = UUID()
+        legacy.values[old] = .init(endpoint: "https://example.invalid/old", signingSecret: "s", headers: ["X": "y"])
+        let storage = SMSForwardingFileSecrets(directory: directory, legacy: legacy)
+        XCTAssertEqual(try storage.read(id: old).endpoint, "https://example.invalid/old")
+        XCTAssertNil(legacy.values[old])
+        try storage.save(.init(endpoint: "https://example.invalid/new"), id: fresh)
+        let reopened = SMSForwardingFileSecrets(directory: directory, legacy: nil)
+        XCTAssertEqual(try reopened.read(id: old).signingSecret, "s")
+        XCTAssertEqual(try reopened.read(id: fresh).endpoint, "https://example.invalid/new")
+        let file = directory.appendingPathComponent("secrets-v1.json")
+        let mode = (try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(mode, 0o600)
+        try reopened.delete(id: fresh)
+        XCTAssertEqual(try reopened.read(id: fresh), SMSForwardingSecrets())
+    }
 }

@@ -39,7 +39,7 @@ final class SMSForwardingStore: ObservableObject {
         let base = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("EC25 Toolbox/SMSForwarding", isDirectory: true)
         self.fileURL = base.appendingPathComponent("forwarding-v1.json")
-        self.secretStorage = secretStorage ?? SMSForwardingKeychain()
+        self.secretStorage = secretStorage ?? SMSForwardingFileSecrets(directory: base)
         self.transport = transport
         self.now = now
         self.autoStart = autoStart
@@ -62,6 +62,8 @@ final class SMSForwardingStore: ObservableObject {
                 lastError = "短信转发状态文件无法读取，已暂停发送；原文件保留。"
             }
         }
+        // Copy any pre-file credentials now, while the user is at the keyboard.
+        if autoStart { for channel in configuration.channels { _ = try? self.secretStorage.read(id: channel.id) } }
         kick()
     }
 
@@ -207,6 +209,26 @@ final class SMSForwardingStore: ObservableObject {
         } catch { lastError = error.localizedDescription }
     }
 
+    /// Incoming calls go only to generic webhook channels (e.g. Bark) whose rules
+    /// match; verification-code and chat-bot channels never receive call alerts.
+    /// The message ID carries the call epoch, so a re-posted banner cannot duplicate.
+    func ingestIncomingCall(caller: String, epoch: Int, moduleID: String, moduleName: String, simID: String, simName: String) {
+        guard configuration.enabled, storageHealthy else { return }
+        let date = now()
+        let message = SMSForwardingMessage.call(epoch: epoch, caller: caller, at: date, moduleID: moduleID,
+                                                moduleName: moduleName, simID: simID, simName: simName)
+        do {
+            try change { next in
+                guard next.seenMessages.insert(moduleID + "|" + message.id).inserted else { return }
+                let targets = Set(next.configuration.rules.filter { $0.matches(message) }.flatMap(\.channelIDs))
+                for channel in next.configuration.channels where channel.enabled && channel.kind == .webhook && targets.contains(channel.id) {
+                    next.jobs.append(SMSForwardingJob(channelID: channel.id, channelName: channel.name, message: message, createdAt: date, updatedAt: date))
+                }
+            }
+            kick()
+        } catch { lastError = error.localizedDescription }
+    }
+
     private func vpnExpiry(_ message: SMSForwardingMessage) -> SMSForwardingOutcome? {
         let age = now().timeIntervalSince(message.receivedAt)
         if age > 180 { return .init(status: .expired, detail: "短信已超过 vpn-manager 的三分钟有效窗口。") }
@@ -292,6 +314,9 @@ final class SMSForwardingStore: ObservableObject {
             return finish(jobID: job.id, outcome: .init(status: .cancelled, detail: "通道已关闭或删除"))
         }
         if channel.kind == .vpnManager, let expiry = vpnExpiry(job.message) { return finish(jobID: job.id, outcome: expiry) }
+        if job.message.isCall, now().timeIntervalSince(job.message.receivedAt) > 90 {
+            return finish(jobID: job.id, outcome: .init(status: .expired, detail: "来电提醒已超过 90 秒，不再补发。"))
+        }
         // Initial send plus three retries. An interrupted fourth attempt cannot
         // silently gain another automatic delivery after restart.
         guard job.attempts < 4 else {

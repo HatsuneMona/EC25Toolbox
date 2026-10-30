@@ -96,7 +96,8 @@ enum SMSForwardingSender {
             "timestamp": timestamp, "receive_time": formatter.string(from: message.receivedAt),
             "module": message.moduleName, "module_id": message.moduleID, "sim": message.simName, "sim_id": message.simID,
             "sign": percentEncode(signature), "device_mark": message.moduleName, "card_slot": message.simName,
-            "title": message.simName, "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "27.1"
+            "title": message.simName, "level": message.isCall ? "timeSensitive" : "active",
+            "event": message.isCall ? "call" : "sms", "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "27.1"
         ]
         // One substitution pass: placeholder-like text inside an SMS stays literal.
         let expression = try! NSRegularExpression(pattern: #"(?:\$\{([a-z_]+)\}|\[([a-z_]+)\])"#)

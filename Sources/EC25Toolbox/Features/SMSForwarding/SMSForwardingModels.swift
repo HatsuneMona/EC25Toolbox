@@ -13,6 +13,15 @@ struct SMSForwardingMessage: Codable, Equatable, Sendable {
     var simName: String
     var componentIDs: [String]
 
+    /// Incoming calls reuse the SMS job pipeline; the ID prefix marks them.
+    var isCall: Bool { id.hasPrefix("call:") }
+
+    static func call(epoch: Int, caller: String, at date: Date, moduleID: String, moduleName: String,
+                     simID: String, simName: String) -> Self {
+        Self(id: "call:\(moduleID):\(epoch):\(Int64(date.timeIntervalSince1970))", sender: caller, body: "来电",
+             receivedAt: date, moduleID: moduleID, moduleName: moduleName, simID: simID, simName: simName, componentIDs: [])
+    }
+
     static func sample(at date: Date = Date()) -> Self {
         Self(id: UUID().uuidString, sender: "EC25 Toolbox 测试", body: "【测试消息】短信转发配置测试。", receivedAt: date,
              moduleID: "test", moduleName: "测试模块", simID: "test", simName: "测试 SIM", componentIDs: [])

@@ -52,3 +52,5 @@
 # Nested vendor repository metadata must never be committed. The vendored
 # source itself remains tracked by the root repository.
 /ThirdParty/lpac/.git/
+
+.tmp/

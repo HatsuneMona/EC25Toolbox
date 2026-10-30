@@ -161,6 +161,14 @@ extension ModemStore {
                 moduleName: moduleDisplayName
             )
             appendCallTimeline(.notifyPosted, detail: display.timelineToken)
+            SMSForwardingStore.shared.ingestIncomingCall(
+                caller: display.title,
+                epoch: epoch,
+                moduleID: moduleSerialNumber ?? moduleIdentifier,
+                moduleName: moduleDisplayName,
+                simID: currentSIMMessageScope().iccid ?? "",
+                simName: moduleDisplayName
+            )
         }
     }
 
