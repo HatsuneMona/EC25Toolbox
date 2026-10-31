@@ -159,6 +159,9 @@ extension ModemStore {
         remoteNumber: String?
     ) {
         guard usesQDC507VoiceRuntime else {
+            // An external SIP bridge owns the module sound card; a second
+            // bridge on the same endpoints would echo and starve it.
+            if localControlOwnsCallAudio { return }
             callAudioService.syncWithCall(phase: callMachine.phase, remoteNumber: remoteNumber)
             return
         }

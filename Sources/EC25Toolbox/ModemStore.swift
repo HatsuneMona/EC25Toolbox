@@ -34,6 +34,9 @@ final class ModemStore: ObservableObject {
     let localTransport: EC25Transport
     var transport: any ModemTransport
     var remoteServer: RemoteManagementServer?
+    /// Opt-in loopback interface for an external SIP bridge (see
+    /// `ModemStore+LocalControl.swift`).
+    var localControlServer: LocalControlServer?
     /// SMS archive owned by this store; tests inject a temporary-directory
     /// instance through the dedicated initializer.
     let smsArchive: SMSArchiveStore
@@ -213,6 +216,7 @@ final class ModemStore: ObservableObject {
         gnssNMEATask?.cancel()
         vowifiTask?.cancel()
         remoteServer?.stop()
+        localControlServer?.stop()
     }
 
     /// SF Symbol name used for menu-bar fallback labels and accessibility.
@@ -272,6 +276,7 @@ final class ModemStore: ObservableObject {
         if ownsGlobalServices {
             applyLoginItemSetting()
             startRemoteSharingIfNeeded()
+            startLocalControlIfEnabled()
         }
         startExitPathMonitoring()
         restartPollers()
@@ -305,7 +310,10 @@ final class ModemStore: ObservableObject {
         stopTrafficSampling(persist: true)
         exitPathMonitor.stop()
         callAudioService.shutdown()
-        if ownsGlobalServices { stopRemoteSharing() }
+        if ownsGlobalServices {
+            stopRemoteSharing()
+            stopLocalControl()
+        }
 
         guard needsTransportCleanup else { return }
         Task { @MainActor [self] in
